@@ -30,10 +30,7 @@ cat > "$H/include/android-config.h" <<EOF
 EOF
 L=common/q/linker.cpp
 # pakai pola, bukan nomor baris, karena nomor baris bergeser antar versi
-sed -i '/TRACE(/s/needed_by->get_dt_runpath())/android::base::Join(needed_by->get_dt_runpath(), ":").c_str())/' $L
-sed -i '/TRACE(/s/ns->get_default_library_paths())/android::base::Join(ns->get_default_library_paths(), ":").c_str())/' $L
-# aktifkan include android-base/strings.h bila masih dikomentari
-sed -i 's|^//[[:space:]]*#include "android-base/strings.h"|#include "android-base/strings.h"|' $L
+sed -i -E '/TRACE\(/s/((ns|needed_by)->get_(ld_library_paths|default_library_paths|dt_runpath)\(\))/android::base::Join(\1, ":").c_str()/g' $L
 # std::string_view butuh header ini
 S=common/q/bionic/libc/include/android-base/strings.h
 [ -f "$S" ] && ! grep -q '<string_view>' "$S" && sed -i '0,/#include/s//#include <string_view>\n#include/' "$S"
