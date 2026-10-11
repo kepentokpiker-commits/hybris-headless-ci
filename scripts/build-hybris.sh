@@ -107,7 +107,7 @@ autoreconf -fi
 # 6. Compile
 make -j"$(nproc)" || {
   echo "=== ERROR DETAIL ==="
-  make -j1 -k 2>&1 | grep -E "error:|fatal error" | sort -u | head -40
+  make -j1 -k 2>&1 | grep -E "error:|fatal error|undefined reference|cannot find" | sort -u | head -40
   exit 1
 }
 
