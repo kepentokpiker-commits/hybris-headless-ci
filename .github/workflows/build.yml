@@ -45,7 +45,7 @@ jobs:
       - run: |
           apt-get update
           apt-get install -y clang autoconf automake libtool pkg-config make \
-            git ca-certificates libegl-dev libgles-dev libglvnd-dev dpkg-dev
+            git ca-certificates libegl-dev libgles-dev libglvnd-dev dpkg-dev libwayland-dev wayland-protocols
       - uses: actions/checkout@v4
       - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
       - run: bash scripts/build-hybris.sh "${{ matrix.android }}"
