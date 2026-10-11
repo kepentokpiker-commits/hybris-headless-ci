@@ -99,10 +99,12 @@ export CFLAGS="-g -O2 -Wno-error=implicit-function-declaration"
 
 autoreconf -fi
 ./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu \
-  --enable-arch=arm64 --enable-property-cache --disable-wayland \
+  --enable-arch=arm64 --enable-property-cache --enable-wayland \
   --with-android-headers="$H/include" \
   --with-default-hybris-ld-library-path=/system/lib64:/odm/lib64:/vendor/lib64 \
   || { tail -60 config.log; exit 1; }
+
+  grep -n "server_wlegl" egl/platforms/common/Makefile.am || echo "tidak ada di Makefile.am"
 
 # 6. Compile
 make -j"$(nproc)" || {
