@@ -43,6 +43,13 @@ if [ -f "$S" ] && ! grep -q '<string_view>' "$S"; then
 fi
 grep -n "hybris_join_paths_" "$L" | head
 
+# 3e. deklarasi __v*printf_chk untuk hooks.c (clang 18 menolak implicit declaration)
+for f in $(find . -name hooks.c); do
+  if grep -q '__vsprintf_chk' "$f" && ! grep -q 'hybris_chk_decl' "$f"; then
+    sed -i '1i /* hybris_chk_decl */\nextern int __vsprintf_chk(char *, int, unsigned long, const char *, __builtin_va_list);\nextern int __vsnprintf_chk(char *, unsigned long, int, unsigned long, const char *, __builtin_va_list);' "$f"
+  fi
+done
+
 # 4. Penanda versi Android yang diminta configure
 cat > "$H/include/android-config.h" <<EOF
 #ifndef ANDROID_CONFIG_H
@@ -71,15 +78,7 @@ EOF
 # 5. Configure
 export CC=clang CXX=clang++
 export CPPFLAGS="-I$H/include -idirafter $H/bionic-include"
-
-cat > /tmp/hybris_chk.h <<'EOF'
-#include <stdio.h>
-#include <stdarg.h>
-#include <stddef.h>
-extern int __vsprintf_chk(char *, int, size_t, const char *, va_list);
-extern int __vsnprintf_chk(char *, size_t, int, size_t, const char *, va_list);
-EOF
-export CFLAGS="-g -O2 -include /tmp/hybris_chk.h -Wno-error=implicit-function-declaration"
+export CFLAGS="-g -O2 -Wno-error=implicit-function-declaration"
 
 autoreconf -fi
 ./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu \
