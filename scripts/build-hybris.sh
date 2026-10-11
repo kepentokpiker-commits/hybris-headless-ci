@@ -93,7 +93,8 @@ EOF
 
 # 5. Configure
 export CC=clang CXX=clang++
-export CPPFLAGS="-I$H/include -idirafter $H/bionic-include"
+export CPPFLAGS="-I$H/include -idirafter $H/bionic-include \
+  -DEGL_WAYLAND_BUFFER_WL=0x31D5 -DEGL_TEXTURE_EXTERNAL_WL=0x31DA"
 export CFLAGS="-g -O2 -Wno-error=implicit-function-declaration"
 
 autoreconf -fi
