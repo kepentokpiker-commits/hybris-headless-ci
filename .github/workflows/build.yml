@@ -1,27 +1,55 @@
 name: build-hybris
-on: { workflow_dispatch: {}, push: { branches: [main] } }
+on:
+  workflow_dispatch:
+    inputs:
+      android:
+        description: Versi Android
+        type: choice
+        options: [all, "12", "13", "14", "15", "16"]
+        default: "12"
+      ubuntu:
+        description: Versi Ubuntu target
+        type: choice
+        options: ["22.04", "24.04"]
+        default: "24.04"
+      source:
+        description: Sumber libhybris
+        type: choice
+        options: [upstream, droidian]
+        default: upstream
+
 jobs:
-  build:
+  prep:
     runs-on: ubuntu-24.04-arm
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        run: |
+          ALL='[{"android":12,"tag":"android-12.0.0_r1"},{"android":13,"tag":"android-13.0.0_r1"},{"android":14,"tag":"android-14.0.0_r1"},{"android":15,"tag":"android-15.0.0_r1"},{"android":16,"tag":"android-16.0.0_r1"}]'
+          if [ "${{ inputs.android }}" = all ]; then M="$ALL"
+          else M=$(echo "$ALL" | jq -c --argjson v "${{ inputs.android }}" '[.[]|select(.android==$v)]'); fi
+          echo "matrix=$M" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prep
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:${{ inputs.ubuntu }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { android: 12, tag: android-12.0.0_r1 }
-          - { android: 13, tag: android-13.0.0_r1 }
-          - { android: 14, tag: android-14.0.0_r1 }
-          - { android: 15, tag: android-15.0.0_r1 }
-          - { android: 16, tag: android-16.0.0_r1 }
+        include: ${{ fromJson(needs.prep.outputs.matrix) }}
+    env:
+      LIBHYBRIS_URL: ${{ inputs.source == 'droidian' && 'https://github.com/droidian/libhybris' || 'https://github.com/libhybris/libhybris' }}
     steps:
-      - uses: actions/checkout@v4
       - run: |
-          sudo apt-get update
-          sudo apt-get install -y clang autoconf automake libtool \
-            pkg-config make git libegl-dev libgles-dev libglvnd-dev dpkg-dev
+          apt-get update
+          apt-get install -y clang autoconf automake libtool pkg-config make \
+            git ca-certificates libegl-dev libgles-dev libglvnd-dev dpkg-dev
+      - uses: actions/checkout@v4
       - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
       - run: bash scripts/build-hybris.sh "${{ matrix.android }}"
-      - run: dpkg-deb -c dist/*.deb | head -50
       - uses: actions/upload-artifact@v4
         with:
-          name: hybris-headless-android${{ matrix.android }}-arm64
+          name: hybris-android${{ matrix.android }}-ubuntu${{ inputs.ubuntu }}-arm64
           path: dist/*.deb
