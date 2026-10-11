@@ -6,10 +6,12 @@ cd "$W/libhybris/hybris"
 find . -name Makefile.am -exec sed -i 's/-std=gnu++11/-std=gnu++17/g' {} +
 export CC=clang CXX=clang++
 export CPPFLAGS="-I$H/include -idirafter $H/bionic-include"
-./autogen.sh --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu \
+autoreconf -fi
+./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu \
   --enable-arch=arm64 --enable-property-cache --disable-wayland \
   --with-android-headers="$H/include" \
-  --with-default-hybris-ld-library-path=/system/lib64:/odm/lib64:/vendor/lib64
+  --with-default-hybris-ld-library-path=/system/lib64:/odm/lib64:/vendor/lib64 \
+  || { tail -60 config.log; exit 1; }
 make -j"$(nproc)"
 make install DESTDIR="$P"
 mkdir -p "$P/DEBIAN" "$ROOT/dist"
