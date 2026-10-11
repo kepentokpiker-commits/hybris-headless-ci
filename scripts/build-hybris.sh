@@ -6,6 +6,20 @@ cd "$W/libhybris/hybris"
 find . -name Makefile.am -exec sed -i 's/-std=gnu++11/-std=gnu++17/g' {} +
 export CC=clang CXX=clang++
 export CPPFLAGS="-I$H/include -idirafter $H/bionic-include"
+cat > "$H/include/android-version.h" <<EOF
+#ifndef ANDROID_VERSION_H
+#define ANDROID_VERSION_H
+#ifndef ANDROID_VERSION_MAJOR
+#define ANDROID_VERSION_MAJOR $A
+#endif
+#ifndef ANDROID_VERSION_MINOR
+#define ANDROID_VERSION_MINOR 0
+#endif
+#ifndef ANDROID_VERSION_PATCH
+#define ANDROID_VERSION_PATCH 0
+#endif
+#endif
+EOF
 cat > "$H/include/android-config.h" <<EOF
 #ifndef ANDROID_CONFIG_H
 #define ANDROID_CONFIG_H
