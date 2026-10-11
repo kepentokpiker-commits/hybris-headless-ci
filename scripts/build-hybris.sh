@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 A="$1"; ROOT="$PWD"; W="$ROOT/work"; H="$W/headers"; P="$W/pkg"
-git clone --depth 1 https://github.com/libhybris/libhybris "$W/libhybris"
+git clone --depth 1 "$LIBHYBRIS_URL" "$W/libhybris"
 cd "$W/libhybris/hybris"
 find . -name Makefile.am -exec sed -i 's/-std=gnu++11/-std=gnu++17/g' {} +
 export CC=clang CXX=clang++
