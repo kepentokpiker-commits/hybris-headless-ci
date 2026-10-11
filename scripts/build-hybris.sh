@@ -34,7 +34,11 @@ autoreconf -fi
   --with-android-headers="$H/include" \
   --with-default-hybris-ld-library-path=/system/lib64:/odm/lib64:/vendor/lib64 \
   || { tail -60 config.log; exit 1; }
-make -j"$(nproc)"
+  make -j"$(nproc)" || {
+  echo "=== ERROR DETAIL ==="
+  make -j1 2>&1 | grep -B3 -A8 "error:" | head -100
+  exit 1
+}
 make install DESTDIR="$P"
 mkdir -p "$P/DEBIAN" "$ROOT/dist"
 cat > "$P/DEBIAN/control" <<EOF
