@@ -90,7 +90,7 @@ autoreconf -fi
 # 6. Compile
 make -j"$(nproc)" || {
   echo "=== ERROR DETAIL ==="
-  make -j1 2>&1 | grep -B3 -A8 "error:" | head -100
+  make -j1 -k 2>&1 | grep -E "error:|fatal error" | sort -u | head -40
   exit 1
 }
 
