@@ -72,6 +72,15 @@ EOF
 export CC=clang CXX=clang++
 export CPPFLAGS="-I$H/include -idirafter $H/bionic-include"
 
+cat > /tmp/hybris_chk.h <<'EOF'
+#include <stdio.h>
+#include <stdarg.h>
+#include <stddef.h>
+extern int __vsprintf_chk(char *, int, size_t, const char *, va_list);
+extern int __vsnprintf_chk(char *, size_t, int, size_t, const char *, va_list);
+EOF
+export CFLAGS="-g -O2 -include /tmp/hybris_chk.h -Wno-error=implicit-function-declaration"
+
 autoreconf -fi
 ./configure --prefix=/usr --libdir=/usr/lib/aarch64-linux-gnu \
   --enable-arch=arm64 --enable-property-cache --disable-wayland \
