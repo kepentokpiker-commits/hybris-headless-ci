@@ -75,6 +75,22 @@ cat > "$H/include/android-version.h" <<EOF
 #endif
 EOF
 
+# 4b. makro NDK versioning tidak ada di cdefs.h glibc, jadi bungkus
+mkdir -p "$H/include/sys"
+cat > "$H/include/sys/cdefs.h" <<'EOF'
+#include_next <sys/cdefs.h>
+#ifndef __INTRODUCED_IN
+#define __INTRODUCED_IN(x)
+#define __INTRODUCED_IN_32(x)
+#define __INTRODUCED_IN_64(x)
+#define __INTRODUCED_IN_ARM(x)
+#define __INTRODUCED_IN_X86(x)
+#define __DEPRECATED_IN(...)
+#define __REMOVED_IN(...)
+#define __BIONIC_AVAILABILITY_GUARD(x) 1
+#endif
+EOF
+
 # 5. Configure
 export CC=clang CXX=clang++
 export CPPFLAGS="-I$H/include -idirafter $H/bionic-include"
