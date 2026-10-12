@@ -20,14 +20,10 @@ on:
       driver:
         description: Driver GPU
         type: choice
-        options: [hal-icd, panvk-kbase, keduanya]
+        options: [hal-icd, panvk-kbase, turnip-kgsl]
         default: panvk-kbase
       mesa_repo:
-        description: Repo Mesa (backend kbase)
-        type: string
-        default: https://github.com/xodiosx/mesa-panvk-mali-g57
-      mesa_ref:
-        description: Branch/tag Mesa
+        description: Repo Mesa (kosong = otomatis sesuai driver)
         type: string
         default: ""
 
