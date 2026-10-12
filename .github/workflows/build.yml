@@ -21,18 +21,19 @@ on:
         description: Driver GPU
         type: choice
         options: [hal-icd, panvk-kbase, turnip-kgsl]
-        default: panvk-kbase
+        default: hal-icd
       mesa_repo:
-        description: Repo Mesa (kosong = otomatis sesuai driver)
+        description: Repo Mesa (kosong = otomatis)
         type: string
         default: ""
       mesa_ref:
-        description: Branch/tag Mesa
+        description: Branch/tag Mesa (kosong = default)
         type: string
         default: ""
 
 jobs:
   prep:
+    if: inputs.driver == 'hal-icd'
     runs-on: ubuntu-24.04-arm
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
@@ -46,7 +47,7 @@ jobs:
 
   build:
     needs: prep
-    if: inputs.driver != 'panvk-kbase'
+    if: inputs.driver == 'hal-icd'
     runs-on: ubuntu-24.04-arm
     container: ubuntu:${{ inputs.ubuntu }}
     strategy:
@@ -59,15 +60,23 @@ jobs:
       - run: |
           apt-get update
           apt-get install -y clang autoconf automake libtool pkg-config make \
-            git ca-certificates libegl-dev libgles-dev libglvnd-dev dpkg-dev \
-            libwayland-dev wayland-protocols \
-            libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev \
-            libxcb-present-dev libxcb-sync-dev libxcb-xfixes0-dev \
-            libxshmfence-dev libdrm-dev libxext-dev libxfixes-dev \
-            libwayland-egl-backend-dev
+            git ca-certificates dpkg-dev libegl-dev libgles-dev libglvnd-dev \
+            libvulkan-dev libwayland-dev wayland-protocols \
+            libwayland-egl-backend-dev libx11-dev libx11-xcb-dev libxcb1-dev \
+            libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
+            libxcb-xfixes0-dev libxshmfence-dev libdrm-dev libxext-dev \
+            libxfixes-dev
           ls /usr/include/X11/extensions/XShm.h
           ls /usr/include/wayland-egl-backend.h
           ls /usr/include/vulkan/vk_icd.h
+      - uses: actions/checkout@v4
+      - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
+      - run: bash scripts/build-hybris.sh "${{ matrix.android }}"
+      - run: bash scripts/build-icd.sh "${{ matrix.android }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hybris-android${{ matrix.android }}-ubuntu${{ inputs.ubuntu }}-arm64
+          path: dist/*.deb
 
   mesa:
     if: inputs.driver != 'hal-icd'
@@ -85,9 +94,6 @@ jobs:
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-shm0-dev \
             libxrandr-dev libxshmfence-dev libwayland-dev wayland-protocols \
             dpkg-dev
-      - run: |
-          git clone --depth 1 ${{ inputs.mesa_ref != '' && format('--branch {0}', inputs.mesa_ref) || '' }} \
-            "${{ inputs.mesa_repo }}" mesa
       - env:
           REF: ${{ inputs.mesa_ref }}
         run: |
@@ -111,18 +117,9 @@ jobs:
           DESTDIR="$PWD/../pkg" ninja -C build install
       - run: |
           mkdir -p pkg/DEBIAN dist
-          printf 'Package: mesa-panvk-kbase\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa PanVK backend kbase\n' > pkg/DEBIAN/control
-          dpkg-deb --build pkg dist/mesa-panvk-kbase_0.1_arm64.deb
+          printf 'Package: mesa-${{ inputs.driver }}\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa ${{ inputs.driver }}\n' > pkg/DEBIAN/control
+          dpkg-deb --build pkg dist/mesa-${{ inputs.driver }}_0.1_arm64.deb
       - uses: actions/upload-artifact@v4
         with:
-          name: mesa-panvk-kbase-ubuntu${{ inputs.ubuntu }}-arm64
-          path: dist/*.deb
-            
-      - uses: actions/checkout@v4
-      - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
-      - run: bash scripts/build-hybris.sh "${{ matrix.android }}"
-      - run: bash scripts/build-icd.sh "${{ matrix.android }}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hybris-android${{ matrix.android }}-ubuntu${{ inputs.ubuntu }}-arm64
+          name: mesa-${{ inputs.driver }}-ubuntu${{ inputs.ubuntu }}-arm64
           path: dist/*.deb
