@@ -6,7 +6,7 @@ on:
         description: Versi Android
         type: choice
         options: [all, "12", "13", "14", "15", "16"]
-        default: all
+        default: "12"
       ubuntu:
         description: Versi Ubuntu target
         type: choice
