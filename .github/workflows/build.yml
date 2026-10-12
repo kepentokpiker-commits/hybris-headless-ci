@@ -1,102 +1,155 @@
-name: build-hybris-chain
+name: build-libhybris
 
 on:
   workflow_dispatch:
     inputs:
-      android_version:
-        description: Versi header Android
+      ubuntu:
+        description: Versi Ubuntu
         type: choice
-        options: ["10", "11", "12", "13", "14", "15", "16"]
-        default: "12"
-      ubuntu_version:
-        description: Versi Ubuntu target
+        options: ["22.04","22.10","23.04","23.10","24.04","24.10","25.04","25.10","26.04"]
+      android:
+        description: Versi Android untuk header
         type: choice
-        options: ["24.04", "24.10", "25.04", "25.10", "26.04"]
-        default: "24.04"
-      api_egl_gles: {type: boolean, default: true, description: EGL/GLES/GL}
-      api_gralloc:  {type: boolean, default: true, description: gralloc/hwcomposer}
-      api_vulkan:   {type: boolean, default: true, description: Vulkan}
-      api_opencl:   {type: boolean, default: true, description: OpenCL}
-      api_media:    {type: boolean, default: true, description: VA-API/VDPAU/media}
-      drv_hal_icd:     {type: boolean, default: true, description: ICD HAL via libhybris}
-      drv_panvk_kbase: {type: boolean, default: true, description: PanVK kbase}
-      drv_turnip_kgsl: {type: boolean, default: true, description: Turnip KGSL}
-      ubuntu_packages:
-        description: "all, atau daftar dipisah koma (libdrm,libglvnd,mesa,...)"
-        default: "all"
+        options: ["10","11","12","13","14","15","16"]
+      header:
+        description: Sumber header
+        type: choice
+        options: [aosp, ndk, android-headers]
+      api:
+        description: Level API untuk android-headers (contoh 30)
         type: string
+        required: false
+      ndk_rilis:
+        description: Rilis NDK bila sumber ndk (contoh r27c)
+        type: string
+        required: false
+      sumber:
+        description: Sumber libhybris
+        type: choice
+        options: [halium, droidian, upstream]
+      cabang:
+        description: Branch (kosongkan untuk bawaan repo)
+        type: string
+        required: false
 
 jobs:
-  chain:
+  build:
     runs-on: ubuntu-24.04-arm
     container:
-      image: ubuntu:${{ inputs.ubuntu_version }}
-    timeout-minutes: 360
+      image: ubuntu:${{ inputs.ubuntu }}
     env:
-      STAGE: ${{ github.workspace }}/stage
-      ANDROID_VERSION: ${{ inputs.android_version }}
-      UBUNTU_VERSION: ${{ inputs.ubuntu_version }}
-      API_EGL_GLES: ${{ inputs.api_egl_gles }}
-      API_GRALLOC: ${{ inputs.api_gralloc }}
-      API_VULKAN: ${{ inputs.api_vulkan }}
-      API_OPENCL: ${{ inputs.api_opencl }}
-      API_MEDIA: ${{ inputs.api_media }}
-      DRV_HAL_ICD: ${{ inputs.drv_hal_icd }}
-      DRV_PANVK_KBASE: ${{ inputs.drv_panvk_kbase }}
-      DRV_TURNIP_KGSL: ${{ inputs.drv_turnip_kgsl }}
-      UBUNTU_PACKAGES: ${{ inputs.ubuntu_packages }}
       DEBIAN_FRONTEND: noninteractive
-      CC: clang
-      CXX: clang++
+      UB: ${{ inputs.ubuntu }}
+      AV: ${{ inputs.android }}
+      SRC: ${{ inputs.sumber }}
+      BR: ${{ inputs.cabang }}
+      NDK: ${{ inputs.ndk_rilis }}
+      API: ${{ inputs.api }}
     steps:
-      - name: 0. Dasar container
+      - name: Paket sistem
         run: |
-          # 24.10 sudah EOL, sumber paket dipindah ke old-releases
-          if [ "$UBUNTU_VERSION" = "24.10" ]; then
-            sed -i -e 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g' \
-                   -e 's|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' \
-                   -e 's|http://ports.ubuntu.com|http://old-releases.ubuntu.com|g' \
-                   /etc/apt/sources.list.d/ubuntu.sources
-          fi
           apt-get update
-          apt-get install -y ca-certificates git sudo
+          apt-get install -y build-essential autoconf automake libtool pkg-config git curl unzip ca-certificates libglvnd-dev libvulkan-dev libx11-dev libxcb1-dev
 
       - uses: actions/checkout@v4
 
-      - name: 1. Siapkan dependensi
+      - name: Source libhybris
         run: |
-          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
-          apt-get update
-          apt-get install -y clang autoconf automake libtool pkg-config \
-            devscripts dpkg-dev equivs meson ninja-build \
-            libdrm-dev libx11-dev libwayland-dev mesa-utils vulkan-tools clinfo
-          mkdir -p "$STAGE" logs
+          case "$SRC" in
+            halium)   U=https://github.com/Halium/libhybris.git ;;
+            droidian) U=https://github.com/droidian/libhybris.git ;;
+            upstream) U=https://github.com/libhybris/libhybris.git ;;
+          esac
+          git clone --depth 1 ${BR:+-b "$BR"} "$U" libhybris
 
-      - name: 2. Header Android
-        run: ./scripts/01-headers.sh
+      - name: Header Android (AOSP)
+        if: inputs.header != 'android-headers'
+        run: |
+          set -e
+          H=$PWD/hdr/include; TAG=android-$AV.0.0_r1
+          mkdir -p $H/{hardware,cutils,log,system,sync,android,vndk,nativebase,ndk,linux,apex} aosp
+          for r in system/core hardware/libhardware frameworks/native bionic; do
+            git clone --depth 1 -b $TAG https://android.googlesource.com/platform/$r aosp/$(basename $r)
+          done
+          cp -a aosp/libhardware/include/hardware/. $H/hardware/
+          cp -a aosp/core/libcutils/include/cutils/. $H/cutils/
+          cp -a aosp/core/liblog/include/log/. $H/log/
+          cp -a aosp/core/liblog/include/android/. $H/android/
+          cp -a aosp/core/libsystem/include/system/. $H/system/
+          cp -a aosp/core/libsync/include/sync/. $H/sync/
+          cp -a aosp/core/libsync/include/ndk/. $H/ndk/
+          cp -a aosp/native/libs/nativewindow/include/android/. $H/android/
+          cp -a aosp/native/libs/nativewindow/include/vndk/. $H/vndk/
+          cp -a aosp/native/libs/nativebase/include/nativebase/. $H/nativebase/
+          cp -a aosp/bionic/libc/kernel/uapi/linux/. $H/linux/
+          echo "HDR=$H" >> $GITHUB_ENV
 
-      - name: 3. libhybris lengkap (semua API terpilih)
-        run: ./scripts/02-libhybris.sh
+      - name: Header NDK (menimpa android dan linux)
+        if: inputs.header == 'ndk'
+        run: |
+          set -e
+          H=$PWD/hdr/include
+          curl -fL -o ndk.zip https://dl.google.com/android/repository/android-ndk-$NDK-linux.zip
+          unzip -q ndk.zip
+          I=$(echo android-ndk-*)/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
+          cp -a $I/android/. $H/android/
+          cp -a $I/linux/. $H/linux/
 
-      - name: 4. Tes lapisan libhybris
-        run: ./scripts/03-test-hybris.sh
+      - name: Header android-headers-NN
+        if: inputs.header == 'android-headers'
+        run: |
+          set -e
+          B=http://staging.repo.droidian.org/pool/main/a/android-headers-$API/
+          F=$(curl -fs $B | grep -o 'href="[^"]*\.tar\.xz"' | sed 's/href="//;s/"$//' | sort -V | tail -1)
+          curl -fL -o ah.tar.xz "$B$F"
+          mkdir ah && tar -xf ah.tar.xz -C ah
+          echo "HDR=$(dirname "$(find ah -name android-config.h | head -1)")" >> $GITHUB_ENV
 
-      - name: 5. Dasar bersama dma-buf
-        run: ./scripts/04-dmabuf.sh
+      - name: File versi dan kompatibilitas
+        run: |
+          H=$PWD/hdr/include
+          mkdir -p $H
+          printf '#ifndef ANDROID_VERSION_H_\n#define ANDROID_VERSION_H_\n#define ANDROID_VERSION_MAJOR %s\n#define ANDROID_VERSION_MINOR 0\n#define ANDROID_VERSION_PATCH 0\n#define ANDROID_VERSION_PATCH2 0\n#define ANDROID_VERSION_PATCH3 0\n#endif\n' "$AV" > $H/android-version.h
+          cat > $H/bionic-compat.h <<'EOF'
+          #ifndef BIONIC_COMPAT_H
+          #define BIONIC_COMPAT_H
+          #if !defined(__clang__)
+          #define _Nullable
+          #define _Nonnull
+          #define _Null_unspecified
+          #endif
+          #define __INTRODUCED_IN(x)
+          #define __INTRODUCED_IN_32(x)
+          #define __INTRODUCED_IN_64(x)
+          #define __REMOVED_IN(x)
+          #define __DEPRECATED_IN(...)
+          #endif
+          EOF
 
-      - name: 6. Jembatan tipis (libglvnd, ICD Vulkan, ICD OpenCL, GBM, VA-API/VDPAU)
-        run: ./scripts/05-bridges.sh
+      - name: Build libhybris (termasuk tests)
+        run: |
+          set -e
+          W=$PWD; C=$W/hdr/include/bionic-compat.h
+          cp -a overlay/. libhybris/
+          cd libhybris/hybris
+          autoreconf -fi
+          ./configure --prefix=/opt/libhybris --enable-arch=arm64 --enable-mali-quirks --enable-glvnd --with-android-headers=$H
+          make -j"$(nproc)" CPPFLAGS="-include $H/bionic-compat.h"
+          make install DESTDIR=$W/stage CPPFLAGS="-include $H/bionic-compat.h"
 
-      - name: 7. Rebuild library Ubuntu terhadap hasil 3-6
-        run: ./scripts/06-rebuild-ubuntu.sh
+      - name: Lib sisi Ubuntu
+        run: |
+          set -e
+          S=$PWD/stage
+          gcc -shared -fPIC -O2 -Wall ubuntu/gm-vk-icd.c -ldl -o $S/opt/libhybris/lib/libvulkan_gm_icd.so
+          mkdir -p $S/etc/glvnd/egl_vendor.d $S/etc/vulkan/icd.d
+          printf '{\n "file_format_version" : "1.0.0",\n "ICD" : {\n  "library_path" : "/opt/libhybris/lib/libEGL_libhybris.so.0"\n }\n}\n' > $S/etc/glvnd/egl_vendor.d/10_libhybris.json
+          printf '{\n "file_format_version" : "1.0.0",\n "ICD" : {\n  "library_path" : "/opt/libhybris/lib/libvulkan_gm_icd.so",\n  "api_version" : "1.1.177"\n }\n}\n' > $S/etc/vulkan/icd.d/gm_icd.json
 
-      - name: 8. Verifikasi akhir
-        run: ./scripts/07-verify.sh
+      - name: Kemas
+        run: tar -C stage -czf libhybris-ubuntu$UB-android$AV-$SRC.tar.gz .
 
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: hybris-chain-android${{ inputs.android_version }}-ubuntu${{ inputs.ubuntu_version }}
-          path: |
-            stage/
-            logs/
+          name: libhybris-ubuntu${{ inputs.ubuntu }}-android${{ inputs.android }}
+          path: libhybris-*.tar.gz
