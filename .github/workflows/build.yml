@@ -58,6 +58,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
       - run: bash scripts/build-hybris.sh "${{ matrix.android }}"
+      - run: bash scripts/build-icd.sh "${{ matrix.android }}"
       - uses: actions/upload-artifact@v4
         with:
           name: hybris-android${{ matrix.android }}-ubuntu${{ inputs.ubuntu }}-arm64
