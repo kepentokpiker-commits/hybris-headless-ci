@@ -17,6 +17,19 @@ on:
         type: choice
         options: [upstream, droidian]
         default: upstream
+      driver:
+        description: Driver GPU
+        type: choice
+        options: [hal-icd, panvk-kbase, keduanya]
+        default: panvk-kbase
+      mesa_repo:
+        description: Repo Mesa (backend kbase)
+        type: string
+        default: https://github.com/xodiosx/mesa-panvk-mali-g57
+      mesa_ref:
+        description: Branch/tag Mesa
+        type: string
+        default: ""
 
 jobs:
   prep:
