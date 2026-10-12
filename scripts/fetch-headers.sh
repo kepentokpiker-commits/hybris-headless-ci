@@ -16,7 +16,8 @@ for d in hardware_libhardware/include system_core/libcutils/include \
   frameworks_native/libs/nativewindow/include \
   frameworks_native/libs/arect/include frameworks_native/opengl/include \
   frameworks_native/libs/nativebase/include \
-  frameworks_native/libs/ui/include; do
+  frameworks_native/libs/ui/include \
+  frameworks_native/vulkan/include; do
   [ -d "$S/$d" ] && cp -a "$S/$d/." "$OUT/include/" || echo "skip $d"
 done
 cp -a "$S/bionic/libc/include/." "$OUT/bionic-include/"
