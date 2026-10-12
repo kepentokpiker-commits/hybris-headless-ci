@@ -25,7 +25,7 @@ build_one() {
   cd "$d" || return 1
   ver=$(dpkg-parsechangelog -S Version)
   dch -b -v "${ver}${SUFFIX}" -D "$(lsb_release -sc)" "Rebuild CI (stack render hybris)" || return 1
-  DEB_BUILD_OPTIONS="nocheck parallel=$(nproc)" dpkg-buildpackage -us -uc -b || return 1
+  DEB_BUILD_OPTIONS="nocheck terse parallel=$(nproc)" dpkg-buildpackage -us -uc -b || return 1
   cd .. && cp ./*.deb "$OUT"/ || return 1
   apt-get install -y --allow-downgrades ./*.deb || true
 }
