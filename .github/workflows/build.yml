@@ -53,6 +53,7 @@ jobs:
             libwayland-egl-backend-dev
           ls /usr/include/X11/extensions/XShm.h
           ls /usr/include/wayland-egl-backend.h
+          ls /usr/include/vulkan/vk_icd.h
             
       - uses: actions/checkout@v4
       - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
