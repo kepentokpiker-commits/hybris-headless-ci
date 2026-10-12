@@ -1,167 +1,102 @@
-name: build-hybris
+name: build-hybris-chain
+
 on:
   workflow_dispatch:
     inputs:
-      android:
-        description: Versi Android
+      android_version:
+        description: Versi header Android
         type: choice
-        options: [all, "12", "13", "14", "15", "16"]
-        default: all
-      ubuntu:
+        options: ["10", "11", "12", "13", "14", "15", "16"]
+        default: "12"
+      ubuntu_version:
         description: Versi Ubuntu target
         type: choice
-        options: ["22.04", "24.04"]
+        options: ["24.04", "24.10", "25.04", "25.10", "26.04"]
         default: "24.04"
-      source:
-        description: Sumber libhybris
-        type: choice
-        options: [upstream, droidian]
-        default: upstream
-      driver:
-        description: Driver GPU
-        type: choice
-        options: [all, hal-icd, panvk-kbase, turnip-kgsl, mesa-all]
-        default: all
-      mesa_repo:
-        description: Repo Mesa (kosong = otomatis)
+      api_egl_gles: {type: boolean, default: true, description: EGL/GLES/GL}
+      api_gralloc:  {type: boolean, default: true, description: gralloc/hwcomposer}
+      api_vulkan:   {type: boolean, default: true, description: Vulkan}
+      api_opencl:   {type: boolean, default: true, description: OpenCL}
+      api_media:    {type: boolean, default: true, description: VA-API/VDPAU/media}
+      drv_hal_icd:     {type: boolean, default: true, description: ICD HAL via libhybris}
+      drv_panvk_kbase: {type: boolean, default: true, description: PanVK kbase}
+      drv_turnip_kgsl: {type: boolean, default: true, description: Turnip KGSL}
+      ubuntu_packages:
+        description: "all, atau daftar dipisah koma (libdrm,libglvnd,mesa,...)"
+        default: "all"
         type: string
-        default: ""
-      mesa_ref:
-        description: Branch/tag Mesa (kosong = default)
-        type: string
-        default: ""
 
 jobs:
-  prep:
-    if: inputs.driver == 'hal-icd' || inputs.driver == 'all'
+  chain:
     runs-on: ubuntu-24.04-arm
-    outputs:
-      matrix: ${{ steps.m.outputs.matrix }}
-    steps:
-      - id: m
-        run: |
-          ALL='[{"android":12,"tag":"android-12.0.0_r1"},{"android":13,"tag":"android-13.0.0_r1"},{"android":14,"tag":"android-14.0.0_r1"},{"android":15,"tag":"android-15.0.0_r1"},{"android":16,"tag":"android-16.0.0_r1"}]'
-          if [ "${{ inputs.android }}" = all ]; then M="$ALL"
-          else M=$(echo "$ALL" | jq -c --argjson v "${{ inputs.android }}" '[.[]|select(.android==$v)]'); fi
-          echo "matrix=$M" >> "$GITHUB_OUTPUT"
-
-  build:
-    needs: prep
-    if: inputs.driver == 'hal-icd' || inputs.driver == 'all'
-    runs-on: ubuntu-24.04-arm
-    container: ubuntu:${{ inputs.ubuntu }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.prep.outputs.matrix) }}
-    env:
-      LIBHYBRIS_URL: ${{ inputs.source == 'droidian' && 'https://github.com/droidian/libhybris' || 'https://github.com/libhybris/libhybris' }}
-    steps:
-      - run: |
-          apt-get update
-          apt-get install -y clang autoconf automake libtool pkg-config make \
-            git ca-certificates dpkg-dev libegl-dev libgles-dev libglvnd-dev \
-            libvulkan-dev libwayland-dev wayland-protocols \
-            libwayland-egl-backend-dev libx11-dev libx11-xcb-dev libxcb1-dev \
-            libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev \
-            libxcb-xfixes0-dev libxshmfence-dev libdrm-dev libxext-dev \
-            libxfixes-dev
-          ls /usr/include/X11/extensions/XShm.h
-          ls /usr/include/wayland-egl-backend.h
-          ls /usr/include/vulkan/vk_icd.h
-      - uses: actions/checkout@v4
-      - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
-      - run: bash scripts/build-hybris.sh "${{ matrix.android }}"
-      - run: bash scripts/build-icd.sh "${{ matrix.android }}"
-      - name: Verifikasi tidak menimpa file Ubuntu
-        run: bash scripts/verify-no-conflict.sh dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hybris-android${{ matrix.android }}-ubuntu${{ inputs.ubuntu }}-arm64
-          path: dist/*.deb
-
-  ubuntu-render:
-    runs-on: ubuntu-24.04-arm
-    container: ubuntu:${{ inputs.ubuntu }}
+    container:
+      image: ubuntu:${{ inputs.ubuntu_version }}
     timeout-minutes: 360
     env:
-      PKGS: >-
-        libdrm libxshmfence libxcb libx11 libxext libxfixes libxrandr
-        libxxf86vm libxdamage wayland wayland-protocols vulkan-headers
-        spirv-headers spirv-tools glslang vulkan-loader opencl-headers
-        ocl-icd libglvnd libepoxy libva libvdpau mesa
+      STAGE: ${{ github.workspace }}/stage
+      ANDROID_VERSION: ${{ inputs.android_version }}
+      UBUNTU_VERSION: ${{ inputs.ubuntu_version }}
+      API_EGL_GLES: ${{ inputs.api_egl_gles }}
+      API_GRALLOC: ${{ inputs.api_gralloc }}
+      API_VULKAN: ${{ inputs.api_vulkan }}
+      API_OPENCL: ${{ inputs.api_opencl }}
+      API_MEDIA: ${{ inputs.api_media }}
+      DRV_HAL_ICD: ${{ inputs.drv_hal_icd }}
+      DRV_PANVK_KBASE: ${{ inputs.drv_panvk_kbase }}
+      DRV_TURNIP_KGSL: ${{ inputs.drv_turnip_kgsl }}
+      UBUNTU_PACKAGES: ${{ inputs.ubuntu_packages }}
+      DEBIAN_FRONTEND: noninteractive
+      CC: clang
+      CXX: clang++
     steps:
-      - run: |
+      - name: 0. Dasar container
+        run: |
+          # 24.10 sudah EOL, sumber paket dipindah ke old-releases
+          if [ "$UBUNTU_VERSION" = "24.10" ]; then
+            sed -i -e 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g' \
+                   -e 's|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' \
+                   -e 's|http://ports.ubuntu.com|http://old-releases.ubuntu.com|g' \
+                   /etc/apt/sources.list.d/ubuntu.sources
+          fi
           apt-get update
-          apt-get install -y ca-certificates lsb-release sudo git
+          apt-get install -y ca-certificates git sudo
+
       - uses: actions/checkout@v4
-      - run: bash scripts/rebuild-ubuntu-render.sh
-      - run: bash scripts/verify-debs.sh out-ubuntu
+
+      - name: 1. Siapkan dependensi
+        run: |
+          sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          apt-get update
+          apt-get install -y clang autoconf automake libtool pkg-config \
+            devscripts dpkg-dev equivs meson ninja-build \
+            libdrm-dev libx11-dev libwayland-dev mesa-utils vulkan-tools clinfo
+          mkdir -p "$STAGE" logs
+
+      - name: 2. Header Android
+        run: ./scripts/01-headers.sh
+
+      - name: 3. libhybris lengkap (semua API terpilih)
+        run: ./scripts/02-libhybris.sh
+
+      - name: 4. Tes lapisan libhybris
+        run: ./scripts/03-test-hybris.sh
+
+      - name: 5. Dasar bersama dma-buf
+        run: ./scripts/04-dmabuf.sh
+
+      - name: 6. Jembatan tipis (libglvnd, ICD Vulkan, ICD OpenCL, GBM, VA-API/VDPAU)
+        run: ./scripts/05-bridges.sh
+
+      - name: 7. Rebuild library Ubuntu terhadap hasil 3-6
+        run: ./scripts/06-rebuild-ubuntu.sh
+
+      - name: 8. Verifikasi akhir
+        run: ./scripts/07-verify.sh
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ubuntu-render-ubuntu${{ inputs.ubuntu }}-arm64
-          path: out-ubuntu/*.deb
-
-  mesa:
-    if: inputs.driver != 'hal-icd'
-    runs-on: ubuntu-24.04-arm
-    container: ubuntu:${{ inputs.ubuntu }}
-    strategy:
-      fail-fast: false
-      matrix:
-        driver: ${{ inputs.driver == 'all' && fromJSON('["panvk-kbase","turnip-kgsl","mesa-all"]') || fromJSON(format('["{0}"]', inputs.driver)) }}
-    steps:
-      - run: |
-          apt-get update
-          apt-get install -y git ca-certificates meson ninja-build pkg-config \
-            clang llvm-dev libclang-dev libclc-dev libllvmspirvlib-dev \
-            spirv-tools glslang-tools python3-mako python3-yaml python3-ply \
-            bison flex libdrm-dev libvulkan-dev libzstd-dev zlib1g-dev \
-            libexpat1-dev libelf-dev libx11-dev libx11-xcb-dev libxcb1-dev \
-            libxcb-dri3-dev libxcb-present-dev libxcb-randr0-dev \
-            libxcb-sync-dev libxcb-xfixes0-dev libxcb-shm0-dev \
-            libxrandr-dev libxshmfence-dev libwayland-dev wayland-protocols \
-            libxdamage-dev libxfixes-dev libxext-dev libxxf86vm-dev \
-            libxcb-glx0-dev libxcb-dri2-0-dev x11proto-dev \
-            dpkg-dev
-      - uses: actions/checkout@v4
-      - env:
-          REF: ${{ inputs.mesa_ref }}
-        run: |
-          case "${{ matrix.driver }}" in
-            panvk-kbase)
-              REPO="${{ inputs.mesa_repo }}"
-              REPO="${REPO:-https://github.com/xodiosx/mesa-panvk-mali-g57}"
-              GALLIUM="panfrost"
-              FLAGS="-Dvulkan-drivers=panfrost -Dpanvk-use-kbase=true -Dpanfrost-kmds=kbase,panthor";;
-            turnip-kgsl)
-              REPO="${{ inputs.mesa_repo }}"
-              REPO="${REPO:-https://gitlab.freedesktop.org/mesa/mesa.git}"
-              GALLIUM="freedreno"
-              FLAGS="-Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl";;
-            mesa-all)
-              REPO="${{ inputs.mesa_repo }}"
-              REPO="${REPO:-https://gitlab.freedesktop.org/mesa/mesa.git}"
-              GALLIUM="panfrost,freedreno,lima,v3d,vc4,etnaviv,zink,llvmpipe,softpipe,virgl"
-              FLAGS="-Dvulkan-drivers=freedreno,panfrost,broadcom,imagination,swrast,virtio -Dfreedreno-kmds=msm,kgsl";;
-          esac
-          git clone --depth 1 ${REF:+--branch $REF} "$REPO" mesa
-          cd mesa
-          meson setup build --prefix=/opt/mesa-hybris --libdir=lib \
-            -Dbuildtype=release \
-            -Dgallium-drivers=$GALLIUM -Dplatforms=x11,wayland \
-            -Dglx=dri -Degl=enabled -Dgbm=enabled -Dgles2=enabled \
-            -Dllvm=enabled $FLAGS \
-            || { tail -60 build/meson-logs/meson-log.txt; exit 1; }
-          ninja -C build -j"$(nproc)" || exit 1
-          DESTDIR="$PWD/../pkg" ninja -C build install
-      - run: |
-          mkdir -p pkg/DEBIAN dist
-          printf 'Package: mesa-${{ matrix.driver }}\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa ${{ matrix.driver }} (di /opt/mesa-hybris)\n' > pkg/DEBIAN/control
-          dpkg-deb --build pkg dist/mesa-${{ matrix.driver }}_0.1_arm64.deb
-          bash scripts/verify-no-conflict.sh dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mesa-${{ matrix.driver }}-ubuntu${{ inputs.ubuntu }}-arm64
-          path: dist/*.deb
+          name: hybris-chain-android${{ inputs.android_version }}-ubuntu${{ inputs.ubuntu_version }}
+          path: |
+            stage/
+            logs/
