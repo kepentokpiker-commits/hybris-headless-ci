@@ -6,7 +6,7 @@ on:
         description: Versi Android
         type: choice
         options: [all, "12", "13", "14", "15", "16"]
-        default: "12"
+        default: all
       ubuntu:
         description: Versi Ubuntu target
         type: choice
@@ -20,7 +20,7 @@ on:
       driver:
         description: Driver GPU
         type: choice
-        options: [all, hal-icd, panvk-kbase, turnip-kgsl]
+        options: [all, hal-icd, panvk-kbase, turnip-kgsl, mesa-all]
         default: all
       mesa_repo:
         description: Repo Mesa (kosong = otomatis)
@@ -110,7 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        driver: ${{ inputs.driver == 'all' && fromJSON('["panvk-kbase","turnip-kgsl"]') || fromJSON(format('["{0}"]', inputs.driver)) }}
+        driver: ${{ inputs.driver == 'all' && fromJSON('["panvk-kbase","turnip-kgsl","mesa-all"]') || fromJSON(format('["{0}"]', inputs.driver)) }}
     steps:
       - run: |
           apt-get update
@@ -122,6 +122,8 @@ jobs:
             libxcb-dri3-dev libxcb-present-dev libxcb-randr0-dev \
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-shm0-dev \
             libxrandr-dev libxshmfence-dev libwayland-dev wayland-protocols \
+            libxdamage-dev libxfixes-dev libxext-dev libxxf86vm-dev \
+            libxcb-glx0-dev libxcb-dri2-0-dev x11proto-dev \
             dpkg-dev
       - uses: actions/checkout@v4
       - env:
@@ -131,17 +133,25 @@ jobs:
             panvk-kbase)
               REPO="${{ inputs.mesa_repo }}"
               REPO="${REPO:-https://github.com/xodiosx/mesa-panvk-mali-g57}"
+              GALLIUM="panfrost"
               FLAGS="-Dvulkan-drivers=panfrost -Dpanvk-use-kbase=true -Dpanfrost-kmds=kbase,panthor";;
             turnip-kgsl)
               REPO="${{ inputs.mesa_repo }}"
               REPO="${REPO:-https://gitlab.freedesktop.org/mesa/mesa.git}"
+              GALLIUM="freedreno"
               FLAGS="-Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl";;
+            mesa-all)
+              REPO="${{ inputs.mesa_repo }}"
+              REPO="${REPO:-https://gitlab.freedesktop.org/mesa/mesa.git}"
+              GALLIUM="panfrost,freedreno,lima,v3d,vc4,etnaviv,zink,llvmpipe,softpipe,virgl"
+              FLAGS="-Dvulkan-drivers=freedreno,panfrost,broadcom,imagination,swrast,virtio -Dfreedreno-kmds=msm,kgsl";;
           esac
           git clone --depth 1 ${REF:+--branch $REF} "$REPO" mesa
           cd mesa
           meson setup build --prefix=/opt/mesa-hybris --libdir=lib \
             -Dbuildtype=release \
-            -Dgallium-drivers= -Dplatforms=x11 -Dglx=disabled \
+            -Dgallium-drivers=$GALLIUM -Dplatforms=x11,wayland \
+            -Dglx=dri -Degl=enabled -Dgbm=enabled -Dgles2=enabled \
             -Dllvm=enabled $FLAGS \
             || { tail -60 build/meson-logs/meson-log.txt; exit 1; }
           ninja -C build -j"$(nproc)" || exit 1
