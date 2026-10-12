@@ -46,6 +46,7 @@ jobs:
 
   build:
     needs: prep
+    if: inputs.driver != 'panvk-kbase'
     runs-on: ubuntu-24.04-arm
     container: ubuntu:${{ inputs.ubuntu }}
     strategy:
