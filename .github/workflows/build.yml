@@ -6,7 +6,7 @@ on:
         description: Versi Android
         type: choice
         options: [all, "12", "13", "14", "15", "16"]
-        default: "12"
+        default: all
       ubuntu:
         description: Versi Ubuntu target
         type: choice
@@ -20,8 +20,8 @@ on:
       driver:
         description: Driver GPU
         type: choice
-        options: [hal-icd, panvk-kbase, turnip-kgsl]
-        default: hal-icd
+        options: [all, hal-icd, panvk-kbase, turnip-kgsl]
+        default: all
       mesa_repo:
         description: Repo Mesa (kosong = otomatis)
         type: string
@@ -30,14 +30,10 @@ on:
         description: Branch/tag Mesa (kosong = default)
         type: string
         default: ""
-      rebuild_ubuntu_render:
-        description: Rebuild libdrm, libglvnd, mesa Ubuntu (GPU + CPU)
-        type: boolean
-        default: true
 
 jobs:
   prep:
-    if: inputs.driver == 'hal-icd'
+    if: inputs.driver == 'hal-icd' || inputs.driver == 'all'
     runs-on: ubuntu-24.04-arm
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
@@ -51,7 +47,7 @@ jobs:
 
   build:
     needs: prep
-    if: inputs.driver == 'hal-icd'
+    if: inputs.driver == 'hal-icd' || inputs.driver == 'all'
     runs-on: ubuntu-24.04-arm
     container: ubuntu:${{ inputs.ubuntu }}
     strategy:
@@ -85,20 +81,24 @@ jobs:
           path: dist/*.deb
 
   ubuntu-render:
-    if: inputs.rebuild_ubuntu_render
     runs-on: ubuntu-24.04-arm
     container: ubuntu:${{ inputs.ubuntu }}
     timeout-minutes: 360
+    env:
+      PKGS: >-
+        libdrm libxshmfence libxcb libx11 libxext libxfixes libxrandr
+        libxxf86vm libxdamage wayland wayland-protocols vulkan-headers
+        spirv-headers spirv-tools glslang vulkan-loader opencl-headers
+        ocl-icd libglvnd libepoxy libva libvdpau mesa
     steps:
       - run: |
           apt-get update
           apt-get install -y ca-certificates lsb-release sudo git
       - uses: actions/checkout@v4
-      - name: Rebuild libdrm, libglvnd, mesa
-        run: bash scripts/rebuild-ubuntu-render.sh
-      - name: Verifikasi hasil rebuild
-        run: bash scripts/verify-debs.sh out-ubuntu
+      - run: bash scripts/rebuild-ubuntu-render.sh
+      - run: bash scripts/verify-debs.sh out-ubuntu
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ubuntu-render-ubuntu${{ inputs.ubuntu }}-arm64
           path: out-ubuntu/*.deb
@@ -107,6 +107,10 @@ jobs:
     if: inputs.driver != 'hal-icd'
     runs-on: ubuntu-24.04-arm
     container: ubuntu:${{ inputs.ubuntu }}
+    strategy:
+      fail-fast: false
+      matrix:
+        driver: ${{ inputs.driver == 'all' && fromJSON('["panvk-kbase","turnip-kgsl"]') || fromJSON(format('["{0}"]', inputs.driver)) }}
     steps:
       - run: |
           apt-get update
@@ -119,10 +123,11 @@ jobs:
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-shm0-dev \
             libxrandr-dev libxshmfence-dev libwayland-dev wayland-protocols \
             dpkg-dev
+      - uses: actions/checkout@v4
       - env:
           REF: ${{ inputs.mesa_ref }}
         run: |
-          case "${{ inputs.driver }}" in
+          case "${{ matrix.driver }}" in
             panvk-kbase)
               REPO="${{ inputs.mesa_repo }}"
               REPO="${REPO:-https://github.com/xodiosx/mesa-panvk-mali-g57}"
@@ -143,10 +148,10 @@ jobs:
           DESTDIR="$PWD/../pkg" ninja -C build install
       - run: |
           mkdir -p pkg/DEBIAN dist
-          printf 'Package: mesa-${{ inputs.driver }}\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa ${{ inputs.driver }} (di /opt/mesa-hybris)\n' > pkg/DEBIAN/control
-          dpkg-deb --build pkg dist/mesa-${{ inputs.driver }}_0.1_arm64.deb
+          printf 'Package: mesa-${{ matrix.driver }}\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa ${{ matrix.driver }} (di /opt/mesa-hybris)\n' > pkg/DEBIAN/control
+          dpkg-deb --build pkg dist/mesa-${{ matrix.driver }}_0.1_arm64.deb
           bash scripts/verify-no-conflict.sh dist
       - uses: actions/upload-artifact@v4
         with:
-          name: mesa-${{ inputs.driver }}-ubuntu${{ inputs.ubuntu }}-arm64
+          name: mesa-${{ matrix.driver }}-ubuntu${{ inputs.ubuntu }}-arm64
           path: dist/*.deb
