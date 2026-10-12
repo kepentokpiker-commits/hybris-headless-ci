@@ -68,6 +68,55 @@ jobs:
           ls /usr/include/X11/extensions/XShm.h
           ls /usr/include/wayland-egl-backend.h
           ls /usr/include/vulkan/vk_icd.h
+
+  mesa:
+    if: inputs.driver != 'hal-icd'
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:${{ inputs.ubuntu }}
+    steps:
+      - run: |
+          apt-get update
+          apt-get install -y git ca-certificates meson ninja-build pkg-config \
+            clang llvm-dev libclang-dev libclc-dev libllvmspirvlib-dev \
+            spirv-tools glslang-tools python3-mako python3-yaml python3-ply \
+            bison flex libdrm-dev libvulkan-dev libzstd-dev zlib1g-dev \
+            libexpat1-dev libelf-dev libx11-dev libx11-xcb-dev libxcb1-dev \
+            libxcb-dri3-dev libxcb-present-dev libxcb-randr0-dev \
+            libxcb-sync-dev libxcb-xfixes0-dev libxcb-shm0-dev \
+            libxrandr-dev libxshmfence-dev libwayland-dev wayland-protocols \
+            dpkg-dev
+      - run: |
+          git clone --depth 1 ${{ inputs.mesa_ref != '' && format('--branch {0}', inputs.mesa_ref) || '' }} \
+            "${{ inputs.mesa_repo }}" mesa
+      - env:
+          REF: ${{ inputs.mesa_ref }}
+        run: |
+          case "${{ inputs.driver }}" in
+            panvk-kbase)
+              REPO="${{ inputs.mesa_repo }}"
+              REPO="${REPO:-https://github.com/xodiosx/mesa-panvk-mali-g57}"
+              FLAGS="-Dvulkan-drivers=panfrost -Dpanvk-use-kbase=true -Dpanfrost-kmds=kbase,panthor";;
+            turnip-kgsl)
+              REPO="${{ inputs.mesa_repo }}"
+              REPO="${REPO:-https://gitlab.freedesktop.org/mesa/mesa.git}"
+              FLAGS="-Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl";;
+          esac
+          git clone --depth 1 ${REF:+--branch $REF} "$REPO" mesa
+          cd mesa
+          meson setup build --prefix=/usr -Dbuildtype=release \
+            -Dgallium-drivers= -Dplatforms=x11 -Dglx=disabled \
+            -Dllvm=enabled $FLAGS \
+            || { tail -60 build/meson-logs/meson-log.txt; exit 1; }
+          ninja -C build -j"$(nproc)" || exit 1
+          DESTDIR="$PWD/../pkg" ninja -C build install
+      - run: |
+          mkdir -p pkg/DEBIAN dist
+          printf 'Package: mesa-panvk-kbase\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa PanVK backend kbase\n' > pkg/DEBIAN/control
+          dpkg-deb --build pkg dist/mesa-panvk-kbase_0.1_arm64.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mesa-panvk-kbase-ubuntu${{ inputs.ubuntu }}-arm64
+          path: dist/*.deb
             
       - uses: actions/checkout@v4
       - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
