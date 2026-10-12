@@ -30,6 +30,10 @@ on:
         description: Branch/tag Mesa (kosong = default)
         type: string
         default: ""
+      rebuild_ubuntu_render:
+        description: Rebuild libdrm, libglvnd, mesa Ubuntu (GPU + CPU)
+        type: boolean
+        default: true
 
 jobs:
   prep:
@@ -73,10 +77,31 @@ jobs:
       - run: bash scripts/fetch-headers.sh "${{ matrix.tag }}" "$PWD/work/headers"
       - run: bash scripts/build-hybris.sh "${{ matrix.android }}"
       - run: bash scripts/build-icd.sh "${{ matrix.android }}"
+      - name: Verifikasi tidak menimpa file Ubuntu
+        run: bash scripts/verify-no-conflict.sh dist
       - uses: actions/upload-artifact@v4
         with:
           name: hybris-android${{ matrix.android }}-ubuntu${{ inputs.ubuntu }}-arm64
           path: dist/*.deb
+
+  ubuntu-render:
+    if: inputs.rebuild_ubuntu_render
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:${{ inputs.ubuntu }}
+    timeout-minutes: 360
+    steps:
+      - run: |
+          apt-get update
+          apt-get install -y ca-certificates lsb-release sudo git
+      - uses: actions/checkout@v4
+      - name: Rebuild libdrm, libglvnd, mesa
+        run: bash scripts/rebuild-ubuntu-render.sh
+      - name: Verifikasi hasil rebuild
+        run: bash scripts/verify-debs.sh out-ubuntu
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-render-ubuntu${{ inputs.ubuntu }}-arm64
+          path: out-ubuntu/*.deb
 
   mesa:
     if: inputs.driver != 'hal-icd'
@@ -109,7 +134,8 @@ jobs:
           esac
           git clone --depth 1 ${REF:+--branch $REF} "$REPO" mesa
           cd mesa
-          meson setup build --prefix=/usr -Dbuildtype=release \
+          meson setup build --prefix=/opt/mesa-hybris --libdir=lib \
+            -Dbuildtype=release \
             -Dgallium-drivers= -Dplatforms=x11 -Dglx=disabled \
             -Dllvm=enabled $FLAGS \
             || { tail -60 build/meson-logs/meson-log.txt; exit 1; }
@@ -117,8 +143,9 @@ jobs:
           DESTDIR="$PWD/../pkg" ninja -C build install
       - run: |
           mkdir -p pkg/DEBIAN dist
-          printf 'Package: mesa-${{ inputs.driver }}\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa ${{ inputs.driver }}\n' > pkg/DEBIAN/control
+          printf 'Package: mesa-${{ inputs.driver }}\nVersion: 0.1\nArchitecture: arm64\nMaintainer: you\nDescription: Mesa ${{ inputs.driver }} (di /opt/mesa-hybris)\n' > pkg/DEBIAN/control
           dpkg-deb --build pkg dist/mesa-${{ inputs.driver }}_0.1_arm64.deb
+          bash scripts/verify-no-conflict.sh dist
       - uses: actions/upload-artifact@v4
         with:
           name: mesa-${{ inputs.driver }}-ubuntu${{ inputs.ubuntu }}-arm64
