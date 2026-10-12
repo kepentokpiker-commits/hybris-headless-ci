@@ -26,6 +26,10 @@ on:
         description: Repo Mesa (kosong = otomatis sesuai driver)
         type: string
         default: ""
+      mesa_ref:
+        description: Branch/tag Mesa
+        type: string
+        default: ""
 
 jobs:
   prep:
