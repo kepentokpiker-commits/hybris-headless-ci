@@ -5,13 +5,13 @@ A="$1"
 ROOT="$PWD"
 W="$ROOT/work"
 H="$W/headers"
-P="$W/pkg"          # staging libhybris (belum terpasang di runner)
+P="$W/pkg"
 PI="$W/pkg-icd"
 LIBDIR=usr/lib/aarch64-linux-gnu
 
 mkdir -p "$PI/$LIBDIR" "$PI/usr/share/vulkan/icd.d" "$PI/DEBIAN" "$ROOT/dist"
 
-# link ke libhardware milik libhybris di staging
+ls "$P/$LIBDIR" | grep -i hardware || true
 clang -shared -fPIC -O2 -Wall -I"$H/include" "$ROOT/icd/icd.c" \
   -o "$PI/$LIBDIR/libvulkan_hybris.so" \
   -L"$P/$LIBDIR" -Wl,-rpath-link,"$P/$LIBDIR" -lhardware
